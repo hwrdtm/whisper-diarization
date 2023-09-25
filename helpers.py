@@ -7,6 +7,7 @@ import platform
 
 import torchaudio
 from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
+import whisperx
 
 punct_model_langs = [
     "en",
