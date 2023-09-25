@@ -74,10 +74,7 @@ if args.model_path is not None:
 else:
     logging.info("Using default model...")
     whisper_model = WhisperModel(
-        args.model_name, device=args.device, compute_type=mtypes[args.device],
-        repo_name="medium.en")
-
-# exit(0)
+        args.model_name, device=args.device, compute_type=mtypes[args.device])
 
 if args.vocal_target_path is not None:
     logging.info("Using provided vocal target...")
