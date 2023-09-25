@@ -112,9 +112,9 @@ for segment in segments:
 del whisper_model
 torch.cuda.empty_cache()
 
-logging.info("Aligning transcript with audio file...", info.language)
-if info.language in wav2vec2_langs:
-    logging.debug("Loading alignment model for language", info.language)
+logging.info("Aligning transcript with audio file...")
+if False and info.language in wav2vec2_langs:
+    logging.debug("Loading alignment model for language")
     alignment_model, metadata = load_align_model(
         language_code=info.language, device=args.device
     )
