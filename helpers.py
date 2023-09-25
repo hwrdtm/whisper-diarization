@@ -81,12 +81,13 @@ Copied from https://github.com/m-bain/whisperX/blob/e94b9043085c32c365b2b60f23e7
 getting segmentation fault from using the library.
 '''
 def load_align_model(language_code, device, model_name=None, model_dir=None):
-    if False:
+    if True:
         alignment_model, metadata = whisperx.load_align_model(
             language_code=info.language, device=args.device
         )
+        return alignment_model, metadata
     else:
-        _load_align_model(language_code, device, "WAV2VEC2_ASR_BASE_960H", model_dir)
+        return _load_align_model(language_code, device, "WAV2VEC2_ASR_BASE_960H", model_dir)
 
 def _load_align_model(language_code, device, model_name=None, model_dir=None):
     if model_name is None:
