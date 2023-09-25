@@ -11,6 +11,8 @@ from deepmultilingualpunctuation import PunctuationModel
 import re
 import logging
 
+logging.getLogger().setLevel(logging.DEBUG)
+
 mtypes = {'cpu': 'int8', 'cuda': 'float16'}
 
 # Initialize parser
@@ -35,6 +37,26 @@ parser.add_argument(
 )
 
 parser.add_argument(
+    "--whisper-model-path",
+    dest="model_path",
+    default=None,
+    help="path to the Whisper model to use",
+)
+
+parser.add_argument(
+    "--prepare-offline-mode",
+    dest="prepare_offline_mode",
+    default=False,
+    help="Prepare for offline execution.",
+)
+
+parser.add_argument(
+    "--vocal-target",
+    dest="vocal_target_path",
+    help="Path to the vocal target file.",
+)
+
+parser.add_argument(
     "--device",
     dest="device",
     default="cuda" if torch.cuda.is_available() else "cpu",
@@ -43,8 +65,26 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-if args.stemming:
+# Initialize Whisper model early to download to cache.
+if args.model_path is not None:
+    logging.info("Using provided model...")
+    whisper_model = WhisperModel(
+        args.model_path, device=args.device, compute_type=mtypes[args.device]
+    )
+else:
+    logging.info("Using default model...")
+    whisper_model = WhisperModel(
+        args.model_name, device=args.device, compute_type=mtypes[args.device],
+        repo_name="medium.en")
+
+# exit(0)
+
+if args.vocal_target_path is not None:
+    logging.info("Using provided vocal target...")
+    vocal_target = args.vocal_target_path
+elif args.stemming:
     # Isolate vocals from the rest of the audio
+    logging.info("Separating vocals from the rest of the audio...")
 
     return_code = os.system(
         f'python3 -m demucs.separate -n htdemucs --two-stems=vocals "{args.audio}" -o "temp_outputs"'
@@ -60,18 +100,11 @@ if args.stemming:
             "temp_outputs", "htdemucs", os.path.basename(args.audio[:-4]), "vocals.wav"
         )
 else:
+    logging.info("Using original audio file without stemming...")
     vocal_target = args.audio
+logging.info("Vocal target: " + vocal_target)
 
-
-# Run on GPU with FP16
-whisper_model = WhisperModel(
-    args.model_name, device=args.device, compute_type=mtypes[args.device])
-
-# or run on GPU with INT8
-# model = WhisperModel(model_size, device="cuda", compute_type="int8_float16")
-# or run on CPU with INT8
-# model = WhisperModel(model_size, device="cpu", compute_type="int8")
-
+logging.info("Transcribing audio file...")
 segments, info = whisper_model.transcribe(
     vocal_target, beam_size=1, word_timestamps=True
 )
@@ -82,10 +115,13 @@ for segment in segments:
 del whisper_model
 torch.cuda.empty_cache()
 
+logging.info("Aligning transcript with audio file...", info.language)
 if info.language in wav2vec2_langs:
-    alignment_model, metadata = whisperx.load_align_model(
+    logging.debug("Loading alignment model for language", info.language)
+    alignment_model, metadata = load_align_model(
         language_code=info.language, device=args.device
     )
+    logging.debug("Aligning results")
     result_aligned = whisperx.align(
         whisper_results, alignment_model, metadata, vocal_target, args.device
     )
@@ -101,6 +137,7 @@ else:
 
 
 # convert audio to mono for NeMo combatibility
+logging.info("Converting audio to mono...")
 signal, sample_rate = librosa.load(vocal_target, sr=None)
 ROOT = os.getcwd()
 temp_path = os.path.join(ROOT, "temp_outputs")
@@ -108,6 +145,7 @@ os.makedirs(temp_path, exist_ok=True)
 soundfile.write(os.path.join(temp_path, "mono_file.wav"), signal, sample_rate, "PCM_24")
 
 # Initialize NeMo MSDD diarization model
+logging.info("Initializing NeMo MSDD diarization model...")
 msdd_model = NeuralDiarizer(cfg=create_config(temp_path)).to(args.device)
 msdd_model.diarize()
 
@@ -115,8 +153,7 @@ del msdd_model
 torch.cuda.empty_cache()
 
 # Reading timestamps <> Speaker Labels mapping
-
-
+logging.info("Reading timestamps <> Speaker Labels mapping...")
 speaker_ts = []
 with open(os.path.join(temp_path, "pred_rttms", "mono_file.rttm"), "r") as f:
     lines = f.readlines()
@@ -128,6 +165,7 @@ with open(os.path.join(temp_path, "pred_rttms", "mono_file.rttm"), "r") as f:
 
 wsm = get_words_speaker_mapping(word_timestamps, speaker_ts, "start")
 
+logging.info("Restoring punctuation...")
 if info.language in punct_model_langs:
     # restoring punctuation in the transcript to help realign the sentences
     punct_model = PunctuationModel(model="kredor/punctuate-all")
